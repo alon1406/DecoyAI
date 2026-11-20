@@ -7,16 +7,15 @@ that builds a ParsedEmail from his output.
 from dataclasses import dataclass, field
 from typing import Literal
 
-Decision = Literal["hard_hit", "soft_hit", "no_hit"]
+# Exactly two outcomes. There is no "legitimate" and no "soft" result.
+Decision = Literal["phishing", "not_detected"]
 
 
 @dataclass
 class ParsedEmail:
-    """The only fields the Filter needs from the Parser."""
-    urls: list[str] = field(default_factory=list)
-    sender_address: str = ""
-    # (filename, sha256 hex digest) for every attachment
-    attachment_hashes: list[tuple[str, str]] = field(default_factory=list)
+    """The only field the Filter needs from the Parser."""
+    # The domain the email was sent from, lowercase (e.g. "evil.com")
+    sender_domain: str = ""
 
 
 @dataclass
