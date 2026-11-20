@@ -27,7 +27,7 @@ Rules that never change:
 - Built first on Alon's own computer, integrated into the main project later.
 - The Parser does not exist yet. Daniel builds it in parallel.
 - Stack: Python, SQLite, `tldextract`, `requests`, `pytest` (all free / open source).
-- (20.11) Source: **only the Phishing.Database domain list** (MIT, file `phishing-domains-ACTIVE.txt`) plus domains confirmed by an analyst. OpenPhish, URLhaus and PhishTank are not used.
+- (20.11) Source: **only the Phishing.Database domain list** (MIT, file `phishing-domains-ACTIVE.txt`, downloaded from the project's official GitHub repo) plus domains confirmed by an analyst. OpenPhish, URLhaus and PhishTank are not used.
 - (20.11) The Parser gives the Filter the **domain the email was sent from** (`sender_domain`), not the full sender address.
 - (20.11) The Filter has only two outcomes: phishing detected, or not detected (then the agents run).
 - (20.11) The Filter checks **only the sender domain**. Links and file hashes are not checked by the Filter (the agents still receive them from the Parser).
@@ -74,24 +74,29 @@ The Filter needs only one field from the Parser:
 - **Done when:** DB tests pass
 
 ### Stage 3 — Update job (safe download)
-- [x] Confirm the exact file URL on the project's official page before using it (checked on the Phishing.Database README, 20.11). Official download: `https://phish.co.za/latest/phishing-domains-ACTIVE.txt`. Checksums (md5/sha1/sha256/sha512) are in the `Phishing-Database/checksums` repo on GitHub (`https://github.com/Phishing-Database/checksums`). The README does not state the line format; confirm it in the manual first run
-- [ ] The list of sources is one constant in the code (name, URL, checksum URL, TTL), so another source can be added later with one entry plus tests
-- [ ] Download function with the safety rules from section 5
-- [ ] Verify the downloaded file against the published sha256 checksum before touching the database; on mismatch keep the old data
-- [ ] Per-line validation and parsing (skip comments and bad lines)
-- [ ] Normalize each line of the domain list with `normalize_domain` and store it. Skip lines that become empty
-- [ ] Skip hosts that are in `SHARED_HOSTING` / `FREE_MAIL` (they would never count)
-- [ ] Insert with refresh of `expires_at` when a record appears again; TTL 30 days (analyst records: 180)
-- [ ] Remove expired records at the end of each run
-- [ ] (20.11 change) One function runs a full update: download, insert/refresh, delete expired. It is called at system startup
-- [ ] (20.11 change) Store the time of the last successful update in a small extra table (e.g. `meta(key, value)`), with `?` parameters only
-- [ ] (20.11 change) Skip the download if the last successful update is less than 12 hours old
-- [ ] (20.11 change) A failed download (no network, site down, bad feed) keeps the old data and does not raise; the last update date is returned for `limitations`
-- [ ] Sample feed files for tests (no network needed)
-- [ ] Tests: good feed, empty feed, shrunk feed, corrupted lines, running twice
-- [ ] (20.11 change) Tests: update skipped when the last one is under 12 hours old; network failure keeps the old data without an error
-- [ ] Manual first real run on the local machine
-- **Done when:** a real run fills the DB with thousands of rows, and a second run adds no duplicates
+- [x] Confirm the exact file URL on the project's official page before using it (checked on the Phishing.Database README, 20.11). Official download: `https://phish.co.za/latest/phishing-domains-ACTIVE.txt`. (20.11 change) That host returned 503 on the first real run, so the job downloads the same file from the project's official GitHub repo: `https://raw.githubusercontent.com/Phishing-Database/Phishing.Database/refs/heads/master/phishing-domains-ACTIVE.txt` (served as `text/plain`, about 11 MB). Known limitation for the report: the list and its checksum both come from GitHub. Checksums (md5/sha1/sha256/sha512) are in the `Phishing-Database/checksums` repo on GitHub (`https://github.com/Phishing-Database/checksums`). The README does not state the line format; confirm it in the manual first run
+- [x] The list of sources is one constant in the code (name, URL, checksum URL, TTL), so another source can be added later with one entry plus tests
+- [x] Download function with the safety rules from section 5
+- [x] Verify the downloaded file against the published sha256 checksum before touching the database; on mismatch keep the old data
+- [x] Per-line validation and parsing (skip comments and bad lines)
+- [x] Normalize each line of the domain list with `normalize_domain` and store it. Skip lines that become empty
+- [x] Skip hosts that are in `SHARED_HOSTING` / `FREE_MAIL` (they would never count)
+- [x] Insert with refresh of `expires_at` when a record appears again; TTL 30 days (analyst records: 180)
+- [x] Remove expired records at the end of each run
+- [x] (20.11 change) One function runs a full update: download, insert/refresh, delete expired. It is called at system startup
+- [x] (20.11 change) Store the time of the last successful update in a small extra table (`feed_state(source, last_count, updated_at)`, also used for the sanity check), with `?` parameters only
+- [x] (20.11 change) Skip the download if the last successful update is less than 12 hours old
+- [x] (20.11 change) A failed download (no network, site down, bad feed) keeps the old data and does not raise; the last update date is returned for `limitations`
+- [x] Sample feed files for tests (no network needed)
+- [x] Tests: good feed, empty feed, shrunk feed, corrupted lines, running twice
+- [x] (20.11 change) Tests: update skipped when the last one is under 12 hours old; network failure keeps the old data without an error
+- [x] (20.11) Security tests: only the two source URLs are ever requested (real `download()` with a fake `requests.get`); HTTPS only; certificate check on; no redirect to another host or to http; size limit; checksum mismatch touches nothing; a code-reading test allows network code only in `download()`
+- [x] Manual first real run on the local machine (`python -m offline.update --force`): confirm the checksum URL, the line format, the file size and the download time
+  - (20.11) First try: `phish.co.za` returned 503; the job reported the error, did not crash and left the DB untouched. Switched to the GitHub copy (see decisions).
+  - (20.11) Run 1 (`--force`): checksum matched, 361,462 domains stored, 0 removed. Confirms the checksum URL, one domain per line, file about 11 MB (under the 50 MB limit).
+  - (20.11) Run 2 (no `--force`, 1 minute later): skipped by the 12-hour rule, no download, same last-update time.
+  - (20.11) Run 3 (`--force`): 361,462 stored, active total still 361,462, so no duplicates.
+- **Done when:** a real run fills the DB with thousands of rows, and a second run adds no duplicates — **done 20.11**
 
 ### Stage 4 — Filter class
 - [ ] Load active rows into in-memory dicts at startup

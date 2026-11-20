@@ -54,6 +54,7 @@ The files in the repo are the single source of truth.
 | 20.11 | The Filter checks only the sender domain. Weak matches (shared hosting, free mail, only a longer sub-domain listed) are `not_detected`. |
 | 20.11 | `normalize_domain` (`phishfilter/domains.py`) is applied to both the Parser's `sender_domain` and every feed domain. |
 | 20.11 | Only source of known-phishing domains: the Phishing.Database domain list (`phishing-domains-ACTIVE.txt`), plus analyst-confirmed domains. OpenPhish, URLhaus and PhishTank are not used. |
+| 20.11 | The list is downloaded from the project's official GitHub repo (`raw.githubusercontent.com/Phishing-Database/Phishing.Database/.../phishing-domains-ACTIVE.txt`), not from `phish.co.za`, which returned 503 (unavailable) on the first real run. Same project, same file, plain text. Known limitation for the report: the list and its sha256 checksum now both come from GitHub, so the checksum protects against truncated or corrupted files but not against a compromise of the project's GitHub account. |
 | 20.11 | Work is done inside the git repo `DecoyAI` (folder `nodes/filterNode`), on branch `feature/filter-node`. PR to `main` only after Stage 4. |
 | 20.11 | The update job runs at system startup, not on a background schedule. If the last successful update is older than 12 hours: download, insert/refresh, delete expired. Otherwise skip the download. If the download fails, continue with the old data (never block startup) and report the last update date as a limitation. Then the Filter loads the active domains into memory. |
 
