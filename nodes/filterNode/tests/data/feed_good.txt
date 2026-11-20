@@ -1,0 +1,17 @@
+# Sample phishing-domain list for tests. Not real data.
+! another comment style
+
+evil-bank.example
+WWW.Paypa1-Login.EXAMPLE
+secure.evil-bank.example
+evil-bank.example
+192.168.0.1
+not a domain
+evil.example'; DROP TABLE indicators;--
+https://visit-me.example/login
+http://never-open-this.example/path?x=1
+someone.github.io
+github.io
+gmail.com
+mail.outlook.com
+fakegmail.example

@@ -100,15 +100,21 @@ def test_db_module_never_builds_sql_from_strings():
     if any query could be built from text at run time."""
     tree = ast.parse(Path(db.__file__).read_text(encoding="utf-8"))
 
-    # 1. Every execute() call gets a fixed _SQL_ constant as its query.
-    execute_calls = [n for n in ast.walk(tree)
-                     if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
-                     and n.func.attr == "execute"]
-    assert execute_calls, "expected execute() calls in db.py"
-    for call in execute_calls:
+    calls = [n for n in ast.walk(tree)
+             if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)]
+
+    # 1. Every execute() / executemany() call gets a fixed _SQL_ constant as its query.
+    query_calls = [c for c in calls if c.func.attr in ("execute", "executemany")]
+    assert query_calls, "expected execute() calls in db.py"
+    for call in query_calls:
         query = call.args[0]
         assert isinstance(query, ast.Name) and query.id.startswith("_SQL_"), \
-            f"line {call.lineno}: execute() must use a _SQL_ constant"
+            f"line {call.lineno}: {call.func.attr}() must use a _SQL_ constant"
+
+    # 1b. executescript() runs only our own schema file.
+    script_calls = [c for c in calls if c.func.attr == "executescript"]
+    assert len(script_calls) == 1
+    assert "SCHEMA_PATH" in ast.dump(script_calls[0].args[0])
 
     # 2. No string building anywhere in the module: no f-strings, no .format(),
     #    no '%' formatting and no '+' on text.
@@ -122,9 +128,59 @@ def test_db_module_never_builds_sql_from_strings():
                 f"line {node.lineno}: text built with % or +"
 
     # 3. Each _SQL_ constant is plain fixed text that takes its values through '?'.
+    #    Only queries that take no values at all may have no '?'.
+    no_values = {"_SQL_GET_LAST_UPDATE"}
     sql_constants = [n for n in tree.body if isinstance(n, ast.Assign)
                      and n.targets[0].id.startswith("_SQL_")]
-    assert len(sql_constants) == 3
+    assert len(sql_constants) == 6
     for assign in sql_constants:
         assert isinstance(assign.value, ast.Constant) and isinstance(assign.value.value, str)
-        assert "?" in assign.value.value
+        if assign.targets[0].id not in no_values:
+            assert "?" in assign.value.value, assign.targets[0].id
+
+
+# --- Stage 3: store_update, last_count, last_update ---
+
+def test_store_update_adds_refreshes_and_records_state(conn):
+    stored, removed = db.store_update(conn, [("openphish", {"Evil.com", "bad.co.il"}, 30)], NOW)
+    assert (stored, removed) == (2, 0)
+    assert sorted(load_active(conn, now=NOW)) == [("bad.co.il", "openphish"), ("evil.com", "openphish")]
+    assert db.last_count(conn, "openphish") == 2
+    assert db.last_update(conn) == "2026-11-20T12:00:00Z"
+
+
+def test_store_update_refreshes_expiry_without_duplicates(conn):
+    db.store_update(conn, [("openphish", {"evil.com"}, 30)], NOW)
+    db.store_update(conn, [("openphish", {"evil.com"}, 30)], NOW + timedelta(days=20))
+    assert _count(conn) == 1
+    assert load_active(conn, now=NOW + timedelta(days=40)) == [("evil.com", "openphish")]
+
+
+def test_store_update_removes_expired(conn):
+    db.store_update(conn, [("openphish", {"gone.com", "stays.com"}, 30)], NOW)
+    # 31 days later the list no longer has gone.com
+    stored, removed = db.store_update(conn, [("openphish", {"stays.com"}, 30)], NOW + timedelta(days=31))
+    assert (stored, removed) == (1, 1)
+    assert load_active(conn, now=NOW + timedelta(days=31)) == [("stays.com", "openphish")]
+
+
+def test_store_update_drops_invalid_and_malicious_domains(conn):
+    stored, _ = db.store_update(conn, [("openphish", {"ok.com", "", *INJECTIONS}, 30)], NOW)
+    assert stored == 1
+    assert load_active(conn, now=NOW) == [("ok.com", "openphish")]
+
+
+@pytest.mark.parametrize("bad_batch", [("Bad Source", {"x.com"}, 30), ("openphish", {"x.com"}, 0)])
+def test_store_update_is_all_or_nothing(conn, bad_batch):
+    insert(conn, "keep.com", "analyst", 180, now=NOW)
+    with pytest.raises(ValueError):
+        db.store_update(conn, [("openphish", {"first.com"}, 30), bad_batch], NOW)
+    # the first, valid batch was rolled back too
+    assert load_active(conn, now=NOW) == [("keep.com", "analyst")]
+    assert db.last_update(conn) is None
+    assert db.last_count(conn, "openphish") is None
+
+
+def test_last_count_and_last_update_are_none_before_any_update(conn):
+    assert db.last_count(conn, "phishing_database") is None
+    assert db.last_update(conn) is None

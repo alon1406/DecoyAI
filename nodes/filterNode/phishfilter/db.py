@@ -7,6 +7,7 @@ Security rules (feed data is untrusted):
   so SQLite always treats it as plain data, never as a command.
 - Domain and source are validated before they reach the database.
 - executescript() runs only our own schema file from the repo, never outside text.
+- store_update() writes a whole update in one transaction: all of it, or nothing.
 tests/test_db.py checks these rules, including by reading this file's source.
 """
 import re
@@ -30,6 +31,13 @@ _SQL_UPSERT = """
 """
 _SQL_DELETE_EXPIRED = "DELETE FROM indicators WHERE expires_at <= ?"
 _SQL_LOAD_ACTIVE = "SELECT domain, source FROM indicators WHERE expires_at > ?"
+_SQL_SET_FEED_STATE = """
+    INSERT INTO feed_state (source, last_count, updated_at) VALUES (?, ?, ?)
+    ON CONFLICT (source)
+    DO UPDATE SET last_count = excluded.last_count, updated_at = excluded.updated_at
+"""
+_SQL_GET_LAST_COUNT = "SELECT last_count FROM feed_state WHERE source = ?"
+_SQL_GET_LAST_UPDATE = "SELECT MAX(updated_at) FROM feed_state"  # takes no values
 
 
 def _now() -> datetime:
@@ -38,6 +46,14 @@ def _now() -> datetime:
 
 def _fmt(moment: datetime) -> str:
     return moment.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _valid_source(source) -> bool:
+    return isinstance(source, str) and bool(_SOURCE.match(source))
+
+
+def _valid_ttl(ttl_days) -> bool:
+    return isinstance(ttl_days, int) and ttl_days > 0
 
 
 def connect(path: str | Path) -> sqlite3.Connection:
@@ -57,9 +73,7 @@ def insert(conn: sqlite3.Connection, domain: str, source: str,
     domain = normalize_domain(domain)
     if not domain:
         return False
-    if not isinstance(source, str) or not _SOURCE.match(source):
-        return False
-    if not isinstance(ttl_days, int) or ttl_days <= 0:
+    if not _valid_source(source) or not _valid_ttl(ttl_days):
         return False
     now = now or _now()
     conn.execute(
@@ -82,3 +96,43 @@ def load_active(conn: sqlite3.Connection,
     """Return (domain, source) for every record that has not expired."""
     rows = conn.execute(_SQL_LOAD_ACTIVE, (_fmt(now or _now()),))
     return list(rows)
+
+
+def store_update(conn: sqlite3.Connection, batches,
+                 now: datetime) -> tuple[int, int]:
+    """Write a whole update in ONE transaction: all of it, or nothing.
+
+    batches: list of (source, domains, ttl_days).
+    Every domain is normalized again here (defence in depth); invalid ones are dropped.
+    New domains are added, known ones get a new expiry, expired records are removed,
+    and feed_state records how many domains were stored and when.
+    Returns (domains stored, expired records removed).
+    """
+    stamp = _fmt(now)
+    stored = 0
+    try:
+        for source, domains, ttl_days in batches:
+            if not _valid_source(source) or not _valid_ttl(ttl_days):
+                raise ValueError("invalid source or ttl")
+            expires = _fmt(now + timedelta(days=ttl_days))
+            clean = {normalize_domain(d) for d in domains} - {""}
+            conn.executemany(_SQL_UPSERT, [(d, source, stamp, expires) for d in clean])
+            conn.execute(_SQL_SET_FEED_STATE, (source, len(clean), stamp))
+            stored += len(clean)
+        removed = conn.execute(_SQL_DELETE_EXPIRED, (stamp,)).rowcount
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    return stored, removed
+
+
+def last_count(conn: sqlite3.Connection, source: str) -> int | None:
+    """How many domains the last successful update stored for source, or None."""
+    row = conn.execute(_SQL_GET_LAST_COUNT, (source,)).fetchone()
+    return row[0] if row else None
+
+
+def last_update(conn: sqlite3.Connection) -> str | None:
+    """Time of the last successful update (UTC text), or None if there was none."""
+    return conn.execute(_SQL_GET_LAST_UPDATE).fetchone()[0]
