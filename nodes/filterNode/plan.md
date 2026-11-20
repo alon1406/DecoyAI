@@ -27,11 +27,11 @@ Rules that never change:
 - Built first on Alon's own computer, integrated into the main project later.
 - The Parser does not exist yet. Daniel builds it in parallel.
 - Stack: Python, SQLite, `tldextract`, `requests`, `pytest` (all free / open source).
-- Sources: Phishing.Database (MIT) + OpenPhish Community Feed. URLhaus optional later. PhishTank is not used (registration closed).
+- (20.11) Source: **only the Phishing.Database domain list** (MIT, file `phishing-domains-ACTIVE.txt`) plus domains confirmed by an analyst. OpenPhish, URLhaus and PhishTank are not used.
 - (20.11) The Parser gives the Filter the **domain the email was sent from** (`sender_domain`), not the full sender address.
 - (20.11) The Filter has only two outcomes: phishing detected, or not detected (then the agents run).
 - (20.11) The Filter checks **only the sender domain**. Links and file hashes are not checked by the Filter (the agents still receive them from the Parser).
-- (20.11) The feeds (Phishing.Database, OpenPhish) list phishing *websites*. We take the domain of each listed site and compare it to the sender domain. Expect a low hit rate (many phishing emails come from other domains), so the saving may be small. Stage 7 measures it.
+- (20.11) Phishing.Database lists domains of phishing *websites*. We compare the sender domain to that list. Expect a low hit rate (many phishing emails come from other domains), so the saving may be small. Stage 7 measures it.
 - (20.11) The update job runs **at system startup**, not on a background schedule. If the last successful update is older than 12 hours: download, insert/refresh, delete expired. Otherwise skip the download. If the download fails, continue with the old data (never block startup) and report the last update date as a limitation. Then the Filter loads the active domains into memory.
 - Open (decide in Stage 5): if the system runs continuously for more than 12 hours, whether to check for an update again while running.
 
@@ -62,6 +62,7 @@ The Filter needs only one field from the Parser:
 - [x] (20.11 change) Tests for `normalize_domain` (`tests/test_domains.py`)
 - [x] Handle bad input without crashing (empty string, no scheme, weird characters)
 - [x] Tests for every case above
+- Note (20.11): `urls.py` (`normalize_url`) is not used by the Filter any more, since there are no URL feeds. Kept for now. Alon decides whether to delete it and `tests/test_urls.py`
 - **Done when:** `https://WWW.Evil.com/Login/#x` and `http://evil.com/Login` return the same value
 
 ### Stage 2 — Database
@@ -73,10 +74,12 @@ The Filter needs only one field from the Parser:
 - **Done when:** DB tests pass
 
 ### Stage 3 — Update job (safe download)
-- [ ] Confirm the exact feed URLs on each project's official page before using them
+- [x] Confirm the exact file URL on the project's official page before using it (checked on the Phishing.Database README, 20.11). Official download: `https://phish.co.za/latest/phishing-domains-ACTIVE.txt`. Checksums (md5/sha1/sha256/sha512) are in the `Phishing-Database/checksums` repo on GitHub (`https://github.com/Phishing-Database/checksums`). The README does not state the line format; confirm it in the manual first run
+- [ ] The list of sources is one constant in the code (name, URL, checksum URL, TTL), so another source can be added later with one entry plus tests
 - [ ] Download function with the safety rules from section 5
+- [ ] Verify the downloaded file against the published sha256 checksum before touching the database; on mismatch keep the old data
 - [ ] Per-line validation and parsing (skip comments and bad lines)
-- [ ] Domain lists: normalize each line with `normalize_domain`. URL lists (OpenPhish): take the host with `normalize_url` + `host_of`, then store it as a domain
+- [ ] Normalize each line of the domain list with `normalize_domain` and store it. Skip lines that become empty
 - [ ] Skip hosts that are in `SHARED_HOSTING` / `FREE_MAIL` (they would never count)
 - [ ] Insert with refresh of `expires_at` when a record appears again; TTL 30 days (analyst records: 180)
 - [ ] Remove expired records at the end of each run
@@ -131,11 +134,11 @@ Principle: the feed is untrusted data. Read it as text; never open or visit any 
 - [ ] Maximum download size enforced
 - [ ] Do not follow redirects to a different host
 - [ ] Download to a temporary file first; touch the database only after validation passes
-- [ ] Validate every line: URL lines have scheme `http`/`https`; domain lines are a valid host name; sane length, no control characters; drop bad lines
+- [ ] Validate every line: it must be a valid host name (`normalize_domain` returns a value), sane length, no control characters; drop bad lines
 - [ ] Sanity check: if the feed is empty or much smaller than the previous run, ignore it and keep the old data
 - [ ] Verify checksums where the source provides them (Phishing.Database publishes them on GitHub)
 - [ ] Parameterized SQL only
-- [ ] Do not update more often than every 6-12 hours (OpenPhish refreshes about twice a day)
+- [ ] Do not update more often than every 6-12 hours (be gentle with the free host)
 - [ ] Never log feed URLs as clickable links
 - [ ] Optional later: very popular domains (e.g. from the Tranco top list) never count as a hit (the email goes to the agents), to protect against feed mistakes
 
