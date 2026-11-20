@@ -45,7 +45,7 @@ The Filter needs only one field from the Parser:
 
 ### Stage 0 — Skeleton and contracts
 - [x] Create project folder and structure (`phishfilter/`, `offline/`, `data/`, `tests/`)
-- [ ] (Alon, on Windows) create a virtual environment and run `pip install -r requirements.txt`
+- [x] (Alon, on Windows) create a virtual environment and run `pip install -r requirements.txt`
 - [x] `schemas.py`: `ParsedEmail` (minimal) and `FilterResult` (decision, findings, sources, checked, limitations)
 - [x] Test: a `ParsedEmail` and a `FilterResult` can be created by hand
 - [x] (20.11 change) `ParsedEmail`: keep only `sender_domain: str` (remove `sender_address`, `urls`, `attachment_hashes`), update its test
@@ -56,8 +56,8 @@ The Filter needs only one field from the Parser:
 - [x] `normalize_url(url) -> "host/path"`: lowercase, remove `www.`, remove fragment and query, strip trailing `/`
 - [x] Unwrap redirect links (Outlook SafeLinks, `google.com/url?q=`)
 - [x] `registered_domain(host)` using `tldextract` (works for `.co.il`, `.co.uk`)
-- [ ] (20.11 change) `normalize_domain(value) -> str`: lowercase, strip spaces and trailing dot, convert to punycode, return `""` for bad input (used on `sender_domain` and on feed domains)
-- [ ] (20.11 change) Tests for `normalize_domain`
+- [x] (20.11 change) `normalize_domain(value) -> str` in `phishfilter/domains.py`: lowercase, strip spaces, trailing dot and leading `www.`, convert to punycode, return `""` for bad input (not a domain, IP address, too long). Used on the Parser's `sender_domain` and on feed domains
+- [x] (20.11 change) Tests for `normalize_domain` (`tests/test_domains.py`)
 - [x] Handle bad input without crashing (empty string, no scheme, weird characters)
 - [x] Tests for every case above
 - **Done when:** `https://WWW.Evil.com/Login/#x` and `http://evil.com/Login` return the same value

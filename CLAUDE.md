@@ -33,6 +33,32 @@ Email -> Parser -> Filter -> Round 1 agents -> Supervisor -> Final Decision
 - Feed data is untrusted: download over HTTPS with certificate verification, size and time limits, validate every line, parameterized SQL, never visit a listed URL.
 - Full plan, stages and checkboxes: `nodes/filterNode/plan.md`. Work one stage at a time; a stage is done only when its tests pass.
 
+## Working agreement for AI assistants (read first)
+
+Several assistants (Claude Code in Cursor, Claude chat) work on this repo and do not share memory.
+The files in the repo are the single source of truth.
+
+- At the start of a session, read this file and `nodes/filterNode/plan.md`.
+- Do not change a decision listed below without asking Alon. If an answer you would give contradicts a decision here, follow the file and say so.
+- When Alon makes a new decision, update this section and `plan.md` first, then write code.
+- Ask before deleting files. Never run `git commit` or `git push` unless asked.
+- Answer Alon in Hebrew, in simple words, and explain code step by step when asked. Code, comments and file names stay in English.
+
+## Decisions log
+
+| Date | Decision |
+|---|---|
+| 20.11 | The Parser gives the Filter only `sender_domain` (the domain the email was sent from). It does not send links or attachments to the Filter. Links go from the Parser straight to the agents. |
+| 20.11 | The Filter has exactly two outcomes: `phishing` (stop, template explanation, no LLM) or `not_detected` (continue to the agents). It never returns "legitimate". |
+| 20.11 | The Filter checks only the sender domain. Weak matches (shared hosting, free mail, only a longer sub-domain listed) are `not_detected`. |
+| 20.11 | `normalize_domain` (`phishfilter/domains.py`) is applied to both the Parser's `sender_domain` and every feed domain. |
+| 20.11 | Work is done inside the git repo `DecoyAI` (folder `nodes/filterNode`), on branch `feature/filter-node`. PR to `main` only after Stage 4. |
+
+**Open decisions (do not assume):**
+- Which feeds to use: Phishing.Database domain lists only, or also OpenPhish. Until decided, `phishfilter/urls.py` (`normalize_url`) is kept but is not used by the Filter itself.
+- Which Parser header `sender_domain` comes from (`From` or the real sending server). To agree with Daniel.
+- Whether the final output keeps a numeric confidence score (the approved architecture uses verbal summaries only). To confirm with the supervisor.
+
 ## Core constraints (initiation document)
 
 1. **Response time:** the whole pipeline must finish in under 30 seconds.
