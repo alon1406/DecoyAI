@@ -32,6 +32,8 @@ Rules that never change:
 - (20.11) The Filter has only two outcomes: phishing detected, or not detected (then the agents run).
 - (20.11) The Filter checks **only the sender domain**. Links and file hashes are not checked by the Filter (the agents still receive them from the Parser).
 - (20.11) The feeds (Phishing.Database, OpenPhish) list phishing *websites*. We take the domain of each listed site and compare it to the sender domain. Expect a low hit rate (many phishing emails come from other domains), so the saving may be small. Stage 7 measures it.
+- (20.11) The update job runs **at system startup**, not on a background schedule. If the last successful update is older than 12 hours: download, insert/refresh, delete expired. Otherwise skip the download. If the download fails, continue with the old data (never block startup) and report the last update date as a limitation. Then the Filter loads the active domains into memory.
+- Open (decide in Stage 5): if the system runs continuously for more than 12 hours, whether to check for an update again while running.
 
 ## 3. Interface agreed with Daniel (Parser output)
 
@@ -63,10 +65,11 @@ The Filter needs only one field from the Parser:
 - **Done when:** `https://WWW.Evil.com/Login/#x` and `http://evil.com/Login` return the same value
 
 ### Stage 2 — Database
-- [ ] `data/schema.sql`: table `indicators(domain, source, first_seen, expires_at)`, primary key `(domain, source)`. One kind of record only: a phishing domain
-- [ ] Functions: `insert`, `delete_expired`, `load_active`
-- [ ] All SQL uses `?` parameters only (never string formatting)
-- [ ] Tests: insert and fetch, expired entry is not loaded, duplicate insert does not duplicate
+- [x] `data/schema.sql`: table `indicators(domain, source, first_seen, expires_at)`, primary key `(domain, source)`. One kind of record only: a phishing domain
+- [x] Functions: `insert`, `delete_expired`, `load_active` (`phishfilter/db.py`)
+- [x] All SQL uses `?` parameters only (never string formatting). All SQL text is fixed `_SQL_` constants; `source` is validated (`[a-z0-9_]{1,40}`)
+- [x] Tests: insert and fetch, expired entry is not loaded, duplicate insert does not duplicate
+- [x] Security tests: injection text in `domain` or `source` is refused and the table is unharmed; a code-reading test fails if any query is built from strings
 - **Done when:** DB tests pass
 
 ### Stage 3 — Update job (safe download)
@@ -77,8 +80,13 @@ The Filter needs only one field from the Parser:
 - [ ] Skip hosts that are in `SHARED_HOSTING` / `FREE_MAIL` (they would never count)
 - [ ] Insert with refresh of `expires_at` when a record appears again; TTL 30 days (analyst records: 180)
 - [ ] Remove expired records at the end of each run
+- [ ] (20.11 change) One function runs a full update: download, insert/refresh, delete expired. It is called at system startup
+- [ ] (20.11 change) Store the time of the last successful update in a small extra table (e.g. `meta(key, value)`), with `?` parameters only
+- [ ] (20.11 change) Skip the download if the last successful update is less than 12 hours old
+- [ ] (20.11 change) A failed download (no network, site down, bad feed) keeps the old data and does not raise; the last update date is returned for `limitations`
 - [ ] Sample feed files for tests (no network needed)
 - [ ] Tests: good feed, empty feed, shrunk feed, corrupted lines, running twice
+- [ ] (20.11 change) Tests: update skipped when the last one is under 12 hours old; network failure keeps the old data without an error
 - [ ] Manual first real run on the local machine
 - **Done when:** a real run fills the DB with thousands of rows, and a second run adds no duplicates
 
@@ -95,6 +103,7 @@ The Filter needs only one field from the Parser:
 - **Done when:** all seven test cases pass and a lookup takes milliseconds
 
 ### Stage 5 — Integration (after Daniel's Parser exists)
+- [ ] (20.11 change) At system startup: first run the update (if needed, see Stage 3), then create the Filter
 - [ ] `FILTER = Filter()` loaded once at system startup
 - [ ] Orchestrator: Parser -> Filter; on `phishing` return the template decision
 - [ ] `decision_from_template`: Hebrew explanation built from `findings` and `sources`

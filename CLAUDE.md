@@ -27,6 +27,7 @@ Email -> Parser -> Filter -> Round 1 agents -> Supervisor -> Final Decision
 
 - Input: only `sender_domain` (the domain the email was sent from, lowercase), given by the Parser. It never reads the subject, body, links or attachments.
 - Looks the domain up in a local SQLite blacklist of known phishing domains (feeds: Phishing.Database (MIT), OpenPhish Community Feed; analyst-confirmed domains). Loaded into memory at startup; a lookup takes milliseconds.
+- The lists are refreshed at system startup, at most once every 12 hours (download, insert/refresh, delete expired, then load into memory). No background scheduler. A failed download never blocks startup: the old data is used and the last update date is reported as a limitation.
 - **Exactly two outcomes:** `phishing` (stop, fixed Hebrew explanation, no LLM) or `not_detected` (continue to the agents, passing "checked, nothing found" and the limitations).
 - A match is `phishing` only if the sender domain is in the list exactly, or is a sub-domain of a listed domain. Weak matches (only a longer sub-domain is listed, shared hosting such as `github.io`, free mail such as `gmail.com`) count as `not_detected`.
 - The Filter only shortcuts toward Phishing. `not_detected` never means "Legitimate". No allowlist ever shortcuts to Legitimate.
@@ -53,10 +54,12 @@ The files in the repo are the single source of truth.
 | 20.11 | The Filter checks only the sender domain. Weak matches (shared hosting, free mail, only a longer sub-domain listed) are `not_detected`. |
 | 20.11 | `normalize_domain` (`phishfilter/domains.py`) is applied to both the Parser's `sender_domain` and every feed domain. |
 | 20.11 | Work is done inside the git repo `DecoyAI` (folder `nodes/filterNode`), on branch `feature/filter-node`. PR to `main` only after Stage 4. |
+| 20.11 | The update job runs at system startup, not on a background schedule. If the last successful update is older than 12 hours: download, insert/refresh, delete expired. Otherwise skip the download. If the download fails, continue with the old data (never block startup) and report the last update date as a limitation. Then the Filter loads the active domains into memory. |
 
 **Open decisions (do not assume):**
 - Which feeds to use: Phishing.Database domain lists only, or also OpenPhish. Until decided, `phishfilter/urls.py` (`normalize_url`) is kept but is not used by the Filter itself.
 - Which Parser header `sender_domain` comes from (`From` or the real sending server). To agree with Daniel.
+- If the system runs continuously for more than 12 hours, whether to check for a list update again while running. To decide in Stage 5.
 - Whether the final output keeps a numeric confidence score (the approved architecture uses verbal summaries only). To confirm with the supervisor.
 
 ## Core constraints (initiation document)
