@@ -99,16 +99,18 @@ The Filter needs only one field from the Parser:
 - **Done when:** a real run fills the DB with thousands of rows, and a second run adds no duplicates — **done 20.11**
 
 ### Stage 4 — Filter class
-- [ ] Load active rows into in-memory dicts at startup
-- [ ] `check(email) -> FilterResult`: normalize `sender_domain`, then look it up
-- [ ] Rule: the result is `phishing` only if the sender domain is in the list exactly, or is a sub-domain of a listed domain (`mail.evil.com` when `evil.com` is listed). Anything else is `not_detected`
-- [ ] The reverse is weak and ignored: sender `evil.com` when only `login.evil.com` is listed (`not_detected`). This is a tuning point, to be measured in Stage 7
-- [ ] `SHARED_HOSTING` list (`github.io`, `sites.google.com`, `blogspot.com`, `netlify.app`, `vercel.app`, `azurewebsites.net`)
-- [ ] `FREE_MAIL` list (`gmail.com`, `outlook.com`, `hotmail.com`, `yahoo.com`, `icloud.com`). A sender domain in `SHARED_HOSTING` / `FREE_MAIL` never counts as a hit
-- [ ] Fill `checked` and `limitations` (list update date) even when nothing is found
-- [ ] Tests: phishing for an exact listed domain; phishing for a sub-domain of a listed domain
-- [ ] Tests: not_detected when nothing matches, when only a longer sub-domain is listed, when the sender is free mail, when the sender is shared hosting, when `sender_domain` is empty or invalid
-- **Done when:** all seven test cases pass and a lookup takes milliseconds
+- [x] Load active rows into in-memory dicts at startup (`Filter.from_db` in `phishfilter/filter.py`; dict domain -> set of sources)
+- [x] `check(email) -> FilterResult`: normalize `sender_domain`, then look it up
+- [x] Rule: the result is `phishing` only if the sender domain is in the list exactly, or is a sub-domain of a listed domain (`mail.evil.com` when `evil.com` is listed). Anything else is `not_detected`
+- [x] The reverse is weak and ignored: sender `evil.com` when only `login.evil.com` is listed (`not_detected`). This is a tuning point, to be measured in Stage 7
+- [x] (21.11) The parent-domain search stops at the registered domain (offline `tldextract`), so a public suffix such as `co.il` in the list never matches
+- [x] `SHARED_HOSTING` list (`github.io`, `sites.google.com`, `blogspot.com`, `netlify.app`, `vercel.app`, `azurewebsites.net`)
+- [x] `FREE_MAIL` list (`gmail.com`, `outlook.com`, `hotmail.com`, `yahoo.com`, `icloud.com`). A sender domain in `SHARED_HOSTING` / `FREE_MAIL` never counts as a hit
+- [x] Fill `checked` and `limitations` (list update date) even when nothing is found. Result texts are in English (for the agents and the Supervisor); the Hebrew user explanation is built in Stage 5
+- [x] Tests: phishing for an exact listed domain; phishing for a sub-domain of a listed domain
+- [x] Tests: not_detected when nothing matches, when only a longer sub-domain is listed, when the sender is free mail, when the sender is shared hosting, when `sender_domain` is empty or invalid
+- [x] (21.11) Extra tests: public suffix never matches, country suffix, normalization, two sources, limitations always filled, list never downloaded, build from DB, speed (`tests/test_filter.py`)
+- **Done when:** all seven test cases pass and a lookup takes milliseconds — **done 21.11** (147 tests pass; under 1 ms per lookup with 361,000 domains)
 
 ### Stage 5 — Integration (after Daniel's Parser exists)
 - [ ] (20.11 change) At system startup: first run the update (if needed, see Stage 3), then create the Filter
